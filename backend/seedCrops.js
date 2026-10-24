@@ -1,0 +1,141 @@
+const mongoose = require('mongoose');
+require('dotenv').config();
+const Crop = require('./models/Crop');
+
+const crops = [
+  {
+    name: 'Wheat',
+    nameHi: 'गेहूं',
+    season: 'Rabi',
+    soilType: 'Loamy or clay loam soil',
+    soilTypeHi: 'दोमट या चिकनी दोमट मिट्टी',
+    sowingMonths: 'November - December',
+    sowingMonthsHi: 'नवंबर - दिसंबर',
+    harvestMonths: 'March - April',
+    harvestMonthsHi: 'मार्च - अप्रैल',
+    durationDays: 120,
+    waterRequirement: 'Medium (4-6 irrigations)',
+    waterRequirementHi: 'मध्यम (4-6 सिंचाई)',
+    fertilizer: 'Urea, DAP and MOP; apply DAP at sowing and urea in two splits',
+    fertilizerHi: 'यूरिया, डीएपी और एमओपी; बुवाई के समय डीएपी और यूरिया दो बार में डालें',
+    irrigationGuide: 'First irrigation 20-25 days after sowing (crown root stage), then about every 20 days',
+    irrigationGuideHi: 'पहली सिंचाई बुवाई के 20-25 दिन बाद (क्राउन रूट अवस्था), फिर लगभग हर 20 दिन में',
+    description: "India's main rabi crop.",
+    descriptionHi: 'भारत की मुख्य रबी फसल।',
+  },
+  {
+    name: 'Rice',
+    nameHi: 'धान',
+    season: 'Kharif',
+    soilType: 'Clayey or clay loam soil',
+    soilTypeHi: 'चिकनी या चिकनी दोमट मिट्टी',
+    sowingMonths: 'June - July',
+    sowingMonthsHi: 'जून - जुलाई',
+    harvestMonths: 'October - November',
+    harvestMonthsHi: 'अक्टूबर - नवंबर',
+    durationDays: 130,
+    waterRequirement: 'High (field should stay flooded)',
+    waterRequirementHi: 'अधिक (खेत में पानी भरा रहना चाहिए)',
+    fertilizer: 'Urea, SSP and MOP; apply urea in three splits',
+    fertilizerHi: 'यूरिया, एसएसपी और एमओपी; यूरिया तीन हिस्सों में डालें',
+    irrigationGuide: 'Keep 2-5 cm of water after transplanting; stop water 10 days before harvest',
+    irrigationGuideHi: 'रोपाई के बाद 2-5 सेमी पानी रखें; कटाई से 10 दिन पहले पानी बंद करें',
+    description: 'Main cereal crop of the kharif season.',
+    descriptionHi: 'खरीफ की प्रमुख अनाज फसल।',
+  },
+  {
+    name: 'Maize',
+    nameHi: 'मक्का',
+    season: 'Kharif',
+    soilType: 'Well-drained loamy soil',
+    soilTypeHi: 'अच्छी जल निकासी वाली दोमट मिट्टी',
+    sowingMonths: 'June - July',
+    sowingMonthsHi: 'जून - जुलाई',
+    harvestMonths: 'September - October',
+    harvestMonthsHi: 'सितंबर - अक्टूबर',
+    durationDays: 100,
+    waterRequirement: 'Medium',
+    waterRequirementHi: 'मध्यम',
+    fertilizer: 'Urea, DAP and MOP; apply nitrogen in two to three splits',
+    fertilizerHi: 'यूरिया, डीएपी और एमओपी; नाइट्रोजन दो-तीन बार में डालें',
+    irrigationGuide: 'Irrigation is important at flowering and grain filling stages',
+    irrigationGuideHi: 'फूल आने और दाना भरने के समय सिंचाई ज़रूरी है',
+    description: 'Grown for both grain and fodder.',
+    descriptionHi: 'अनाज और चारे दोनों के लिए उगाई जाती है।',
+  },
+  {
+    name: 'Mustard',
+    nameHi: 'सरसों',
+    season: 'Rabi',
+    soilType: 'Light to medium loamy soil',
+    soilTypeHi: 'हल्की से मध्यम दोमट मिट्टी',
+    sowingMonths: 'October - November',
+    sowingMonthsHi: 'अक्टूबर - नवंबर',
+    harvestMonths: 'February - March',
+    harvestMonthsHi: 'फरवरी - मार्च',
+    durationDays: 120,
+    waterRequirement: 'Low (2-3 irrigations)',
+    waterRequirementHi: 'कम (2-3 सिंचाई)',
+    fertilizer: 'Urea, SSP and sulphur',
+    fertilizerHi: 'यूरिया, एसएसपी और सल्फर',
+    irrigationGuide: 'First irrigation 30-35 days after sowing, second at flowering',
+    irrigationGuideHi: 'पहली सिंचाई बुवाई के 30-35 दिन बाद, दूसरी फूल आने पर',
+    description: 'Main oilseed crop of the rabi season.',
+    descriptionHi: 'रबी की मुख्य तिलहन फसल।',
+  },
+  {
+    name: 'Sugarcane',
+    nameHi: 'गन्ना',
+    season: 'Zaid',
+    soilType: 'Deep loamy soil',
+    soilTypeHi: 'गहरी दोमट मिट्टी',
+    sowingMonths: 'February - March',
+    sowingMonthsHi: 'फरवरी - मार्च',
+    harvestMonths: 'December - March (next year)',
+    harvestMonthsHi: 'दिसंबर - मार्च (अगले साल)',
+    durationDays: 330,
+    waterRequirement: 'High',
+    waterRequirementHi: 'अधिक',
+    fertilizer: 'Urea, DAP and MOP along with farmyard manure',
+    fertilizerHi: 'यूरिया, डीएपी और एमओपी, साथ में गोबर की खाद',
+    irrigationGuide: 'Irrigate every 8-10 days in summer and every 20-25 days in winter',
+    irrigationGuideHi: 'गर्मी में हर 8-10 दिन और सर्दी में हर 20-25 दिन के अंतर पर सिंचाई करें',
+    description: 'Main crop for sugar and jaggery.',
+    descriptionHi: 'चीनी और गुड़ बनाने की मुख्य फसल।',
+  },
+  {
+    name: 'Potato',
+    nameHi: 'आलू',
+    season: 'Rabi',
+    soilType: 'Loose sandy loam soil',
+    soilTypeHi: 'भुरभुरी दोमट मिट्टी',
+    sowingMonths: 'October - November',
+    sowingMonthsHi: 'अक्टूबर - नवंबर',
+    harvestMonths: 'January - March',
+    harvestMonthsHi: 'जनवरी - मार्च',
+    durationDays: 90,
+    waterRequirement: 'Medium (light and frequent irrigation)',
+    waterRequirementHi: 'मध्यम (हल्की और बार-बार सिंचाई)',
+    fertilizer: 'Farmyard manure, DAP, urea and MOP',
+    fertilizerHi: 'गोबर की खाद, डीएपी, यूरिया और एमओपी',
+    irrigationGuide: 'First irrigation 10-12 days after planting, then every 10-15 days',
+    irrigationGuideHi: 'बुवाई के 10-12 दिन बाद पहली सिंचाई, फिर हर 10-15 दिन में',
+    description: 'Major vegetable crop.',
+    descriptionHi: 'प्रमुख सब्जी फसल।',
+  },
+];
+
+async function seed() {
+  try {
+    await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 10000 });
+    await Crop.deleteMany({});
+    await Crop.insertMany(crops);
+    console.log(`${crops.length} crops added successfully`);
+  } catch (error) {
+    console.log('Seed error:', error.message);
+  } finally {
+    await mongoose.disconnect();
+  }
+}
+
+seed();
