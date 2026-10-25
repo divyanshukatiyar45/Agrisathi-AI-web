@@ -17,14 +17,24 @@ async function fetchFromApi(state, useKeyword) {
   });
   params.set(useKeyword ? 'filters[state.keyword]' : 'filters[state]', state);
 
-  const response = await fetch(`${BASE_URL}?${params.toString()}`);
-  const data = await response.json().catch(() => ({}));
+  // 25 second mein jawab na aaye to rok dete hain
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
 
-  if (!response.ok || data.error) {
-    throw new Error(data.message || data.error || `API error ${response.status}`);
+  try {
+    const response = await fetch(`${BASE_URL}?${params.toString()}`, {
+      signal: controller.signal,
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok || data.error) {
+      throw new Error(data.message || data.error || `API error ${response.status}`);
+    }
+
+    return Array.isArray(data.records) ? data.records : [];
+  } finally {
+    clearTimeout(timer);
   }
-
-  return Array.isArray(data.records) ? data.records : [];
 }
 
 const toNumber = (value) => {
@@ -73,8 +83,13 @@ router.get('/', async (req, res) => {
 
     res.status(200).json(data);
   } catch (error) {
-    console.log('Market error:', error.message);
-    res.status(500).json({ message: 'Could not load market prices', error: error.message });
+    // Asli wajah (jaise timeout ya connection reset) log mein likhte hain
+    const cause = error.cause ? error.cause.code || error.cause.message : '';
+    const reason =
+      error.name === 'AbortError' ? 'timed out after 25 seconds' : `${error.message} ${cause}`.trim();
+
+    console.log('Market error:', reason);
+    res.status(500).json({ message: 'Could not load market prices', error: reason });
   }
 });
 
