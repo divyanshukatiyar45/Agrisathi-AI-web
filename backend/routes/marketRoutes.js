@@ -1,95 +1,115 @@
 const express = require('express');
+const mongoose = require('mongoose');
+const auth = require('../middleware/auth');
+const admin = require('../middleware/admin');
+const MandiPrice = require('../models/MandiPrice');
 
 const router = express.Router();
 
-const RESOURCE_ID = '9ef84268-d588-465a-a308-a864a43d0070';
-const BASE_URL = `https://api.data.gov.in/resource/${RESOURCE_ID}`;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-// Har state ka data 30 minute yaad rakhte hain, taaki API baar-baar na chale
-const CACHE_MS = 30 * 60 * 1000;
-const cache = new Map();
-
-async function fetchFromApi(state, useKeyword) {
-  const params = new URLSearchParams({
-    'api-key': process.env.DATA_GOV_API_KEY,
-    format: 'json',
-    limit: '1000',
-  });
-  params.set(useKeyword ? 'filters[state.keyword]' : 'filters[state]', state);
-
-  // 25 second mein jawab na aaye to rok dete hain
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25000);
-
-  try {
-    const response = await fetch(`${BASE_URL}?${params.toString()}`, {
-      signal: controller.signal,
-    });
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok || data.error) {
-      throw new Error(data.message || data.error || `API error ${response.status}`);
-    }
-
-    return Array.isArray(data.records) ? data.records : [];
-  } finally {
-    clearTimeout(timer);
-  }
+function isValidDate(str) {
+  if (typeof str !== 'string' || !DATE_RE.test(str)) return false;
+  const d = new Date(`${str}T00:00:00Z`);
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === str;
 }
 
-const toNumber = (value) => {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-};
+// Form se aaya data saaf karta hai aur jaanchta hai
+function cleanBody(b) {
+  const commodity = String(b.commodity || '').trim().slice(0, 60);
+  const commodityHi = String(b.commodityHi || '').trim().slice(0, 60);
+  const market = String(b.market || '').trim().slice(0, 80);
+  const district = String(b.district || '').trim().slice(0, 60);
+  const state = String(b.state || 'Uttar Pradesh').trim().slice(0, 40);
+  const minPrice = Number(b.minPrice);
+  const maxPrice = Number(b.maxPrice);
+  const modalPrice = Number(b.modalPrice);
+  const date = String(b.date || '');
 
-// Market prices: GET /api/market?state=Uttar Pradesh
+  if (!commodity || !market) {
+    return { error: 'Commodity and market are required' };
+  }
+  if (![minPrice, maxPrice, modalPrice].every((n) => Number.isFinite(n) && n >= 0)) {
+    return { error: 'Prices must be valid numbers' };
+  }
+  if (minPrice > modalPrice || modalPrice > maxPrice) {
+    return { error: 'Prices must follow: min <= modal <= max' };
+  }
+  if (!isValidDate(date)) {
+    return { error: 'Valid date is required' };
+  }
+
+  return {
+    data: { commodity, commodityHi, market, district, state, minPrice, maxPrice, modalPrice, date },
+  };
+}
+
+// Sabke liye: GET /api/market
 router.get('/', async (req, res) => {
   try {
-    const state = String(req.query.state || '').trim().slice(0, 40);
-    if (!state) {
-      return res.status(400).json({ message: 'State is required' });
-    }
-    if (!process.env.DATA_GOV_API_KEY) {
-      return res.status(500).json({ message: 'Market price service is not set up yet' });
-    }
+    const filter = {};
+    if (req.query.state) filter.state = String(req.query.state).slice(0, 40);
 
-    const cached = cache.get(state);
-    if (cached && Date.now() - cached.time < CACHE_MS) {
-      return res.status(200).json(cached.data);
-    }
+    const prices = await MandiPrice.find(filter)
+      .sort({ date: -1, commodity: 1 })
+      .limit(500);
 
-    let rows = await fetchFromApi(state, true);
-    if (rows.length === 0) {
-      rows = await fetchFromApi(state, false);
-    }
-
-    const records = rows
-      .map((r) => ({
-        state: r.state,
-        district: r.district,
-        market: r.market,
-        commodity: r.commodity,
-        variety: r.variety,
-        grade: r.grade,
-        date: r.arrival_date,
-        min: toNumber(r.min_price),
-        max: toNumber(r.max_price),
-        modal: toNumber(r.modal_price),
-      }))
-      .filter((r) => r.commodity && r.modal !== null);
-
-    const data = { state, count: records.length, records };
-    cache.set(state, { time: Date.now(), data });
-
-    res.status(200).json(data);
+    res.status(200).json(prices);
   } catch (error) {
-    // Asli wajah (jaise timeout ya connection reset) log mein likhte hain
-    const cause = error.cause ? error.cause.code || error.cause.message : '';
-    const reason =
-      error.name === 'AbortError' ? 'timed out after 25 seconds' : `${error.message} ${cause}`.trim();
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
 
-    console.log('Market error:', reason);
-    res.status(500).json({ message: 'Could not load market prices', error: reason });
+// Sirf admin: naya bhaav jodna
+router.post('/', auth, admin, async (req, res) => {
+  try {
+    const { data, error } = cleanBody(req.body);
+    if (error) return res.status(400).json({ message: error });
+
+    const price = await MandiPrice.create({ ...data, updatedBy: req.user.id });
+    res.status(201).json(price);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+// Sirf admin: bhaav badalna
+router.put('/:id', auth, admin, async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+
+    const { data, error } = cleanBody(req.body);
+    if (error) return res.status(400).json({ message: error });
+
+    const price = await MandiPrice.findByIdAndUpdate(
+      req.params.id,
+      { ...data, updatedBy: req.user.id },
+      { new: true }
+    );
+    if (!price) return res.status(404).json({ message: 'Price not found' });
+
+    res.status(200).json(price);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+// Sirf admin: bhaav hatana
+router.delete('/:id', auth, admin, async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+
+    const result = await MandiPrice.deleteOne({ _id: req.params.id });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ message: 'Price not found' });
+    }
+    res.status(200).json({ message: 'Deleted' });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
 
