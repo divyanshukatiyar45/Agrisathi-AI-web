@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
 const authRoutes = require('./routes/authRoutes');
@@ -54,8 +55,20 @@ app.use('/api/reminders', reminderRoutes);
 app.use('/api/market', marketRoutes);
 app.use('/api/nearby', nearbyRoutes);
 
-app.get('/', (req, res) => {
+app.get('/health', (req, res) => {
   res.send('AgriSathi-AI Backend is running');
+});
+
+// Build hui React website (frontend/dist) yahin se dikhate hain
+const distPath = path.join(__dirname, '..', 'frontend', 'dist');
+app.use(express.static(distPath));
+
+// /api ke alawa koi bhi page (jaise /chat, /crops) par React ka index.html bhejte hain
+app.use((req, res, next) => {
+  if (req.method !== 'GET' || req.path.startsWith('/api')) return next();
+  res.sendFile(path.join(distPath, 'index.html'), (err) => {
+    if (err) next();
+  });
 });
 
 app.use((err, req, res, next) => {
